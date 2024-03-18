@@ -1,0 +1,458 @@
+// wer. 0.4 sterowanie SET komuniakatem MIDI
+// for Atmega32A ( Atmega644 )- Bobuino
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Encoder.h>
+#include <MIDI.h>   // Add Midi Library
+#include <SPI.h>
+#include <SD.h>
+
+#define SetPin A0
+
+#define BACKLIGHT_PIN 3
+
+LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7);
+Encoder encoder(2,3); // Podłącz enkoder do pinów 2 i 3
+const int chipSelect = 10;
+File dataFile;
+int displayNrComb = 1; // Zmienna nrBank używana tylko do wyświetlania
+int realNrComb = 1;    // Rzeczywista wartość nrBank używana do zmiany
+int displayNrBank = 1; // Zmienna nrBank używana tylko do wyświetlania
+int realNrBank = 1;    // Rzeczywista wartość nrBank używana do zmiany
+int encoderChange = 0; // Zmienna używana do śledzenia zmian enkodera co 4 odczyty
+
+unsigned long BAS_channel_1 = 0; // Flags for MIDI-channel 1
+unsigned long TREBL_channel_1 = 0;
+
+unsigned long prev_BAS_channel_1 = 0; // Flags for MIDI-channel 1
+unsigned long prev_TREBL_channel_1 = 0;
+
+int nr = 1;
+
+//Create an instance of the library with default name, serial port and settings
+MIDI_CREATE_DEFAULT_INSTANCE();
+void setup()
+{
+  MIDI.begin(MIDI_CHANNEL_OMNI); // Initialize the Midi Library.
+  // OMNI sets it to listen to all channels.. MIDI.begin(2) would set it
+  // to respond to notes on channel 2 only.
+ 
+  MIDI.turnThruOff(); // Nie przesyła komunikatów z wejscia na wyjscie.
+ 
+  MIDI.setHandleNoteOn(MyHandleNoteOn); // This is important!! This command
+  // tells the Midi Library which function you want to call when a NOTE ON command
+  // is received. In this case it's "MyHandleNoteOn".
+  MIDI.setHandleNoteOff(MyHandleNoteOff); // This command tells the Midi Library
+  // to call "MyHandleNoteOff" when a NOTE OFF command is received.
+
+  lcd.begin(16, 2);
+  lcd.setBacklightPin(BACKLIGHT_PIN, POSITIVE);
+  lcd.setBacklight(HIGH);
+
+  lcd.home();
+  lcd.print("Comb nr");
+ 
+  if (!SD.begin(chipSelect)) {
+    lcd.home();
+    lcd.print("Card SD Error!");
+    return;
+  } else{
+    lcd.home();
+    lcd.print("Card SD Ok!");
+  }
+  pinMode(SetPin, OUTPUT);
+  digitalWrite(SetPin, HIGH);
+    char fileName[13]; // Długość nazwy pliku nie przekracza 8 znaków + 1 znak rozszerzenia + 4 znaki numeru pliku (1, 2, 3...)
+    sprintf(fileName, "C%dB%d.txt", nr, realNrBank);
+}
+
+void loop()
+{
+  MIDI.read(); // Continuously check if Midi data has been received.
+  senderMidi();
+  //writeToSDCard();
+  // Odczytaj zmianę enkodera co 4 odczyty i zaktualizuj zmienną encoderChange
+  long newPosition = encoder.read();
+  static int lastEncoderPosition = 0;
+  if (newPosition != lastEncoderPosition)
+  {
+    encoderChange += newPosition - lastEncoderPosition;
+    lastEncoderPosition = newPosition;
+
+    if (abs(encoderChange) >= 4)
+    {
+      // Aktualizuj rzeczywistą wartość realNrBank co 4 odczyty enkodera
+      if (encoderChange > 0)
+        realNrBank = constrain(realNrBank - 1, 0, 257); // Zmniejsz realNrBank o 1
+      else
+        realNrBank = constrain(realNrBank + 1, 0, 257); // Zwiększ realNrBank o 1
+
+      encoderChange = 0; // Zresetuj zmienną encoderChange
+
+      // Sprawdź i popraw wartość realNrBank, jeśli przekroczy 256 lub spadnie poniżej 1
+      checkNrBankLimits();
+    }
+  }
+
+  // Sprawdź, czy rzeczywista wartość realNrBank się zmieniła
+  static int lastRealNrBank = 0;
+  if (realNrBank != lastRealNrBank)
+  {
+    // Aktualizuj wartość wyświetlanej zmiennej displayNrBank
+    displayNrBank = realNrBank;
+    // Wyświetl wartość displayNrBank na drugim wierszu wyświetlacza LCD
+    lcd.setCursor(0, 1);
+    lcd.print("Bank nr         "); // Czyszczenie starej wartości
+    lcd.setCursor(8, 1);
+    lcd.print(displayNrBank);
+
+    lastRealNrBank = realNrBank; // Zapisz aktualną wartość realNrBank jako poprzednią
+  }
+
+  // Twój pozostały kod
+  // ...
+}
+
+void checkNrBankLimits()
+{
+  // Sprawdź, czy rzeczywista wartość realNrBank przekroczyła 256 lub spadła poniżej 1
+  if (realNrBank > 256)
+    realNrBank = 1;
+  else if (realNrBank < 1)
+    realNrBank = 256;
+}
+
+// MyHandleNoteON is the function that will be called by the Midi Library
+// when a MIDI NOTE ON message is received.
+// It will be passed bytes for Channel, Pitch, and Velocity
+
+void MyHandleNoteOn(byte channel, byte pitch, byte velocity) {
+  if (pitch == 87){
+    digitalWrite(SetPin, LOW);
+  }
+  // Zapamietanie wolne kombinaci nr...
+  if (digitalRead(SetPin) == LOW){
+    if (pitch == 76){
+    nr = 1;
+    writeToSDCard();
+   
+  }
+    if (pitch == 77){
+    nr = 2;
+    writeToSDCard();
+   
+   
+  }
+    if (pitch == 78){
+    nr = 3;
+    writeToSDCard();
+   
+   
+  }
+    if (pitch == 79){
+    nr = 4;
+    writeToSDCard();
+   
+   
+  }
+    if (pitch == 80){
+    nr = 5;
+    writeToSDCard();
+   
+   
+  }
+    if (pitch == 81){
+    nr = 6;
+    writeToSDCard();
+   
+   
+  }
+    if (pitch == 82){
+    nr = 7;
+    writeToSDCard();
+   
+   
+  }
+    if (pitch == 83){
+    nr = 8;
+    writeToSDCard();
+   
+   
+  }
+
+ 
+  // przycisk > (next) + SET zmiana banku na plus
+       if (pitch == 85){
+   
+      realNrBank++;
+      if (realNrBank > 256){
+        realNrBank = 1;
+        displayNrBank = realNrBank;
+      }
+   
+    readToSDCard();
+   
+  }
+//prycisk < (previous) + SET - zmiana banku na minus
+    if (pitch == 86){
+   
+      realNrBank--;
+      if (realNrBank < 1){
+        realNrBank = 256;
+        displayNrBank = realNrBank;
+     
+    }
+    readToSDCard();
+   
+  }
+}  
+  // włącznie kombinaci CombON    
+  if (pitch == 76){
+    nr = 1;
+    readToSDCard();
+   
+  }
+   if (pitch == 77){
+    nr = 2;
+    readToSDCard();
+   
+  }
+     if (pitch == 78){
+    nr = 3;
+    readToSDCard();
+   
+  }
+     if (pitch == 79){
+    nr = 4;
+    readToSDCard();
+   
+  }
+     if (pitch == 80){
+    nr = 5;
+    readToSDCard();
+   
+  }
+     if (pitch == 81){
+    nr = 6;
+    readToSDCard();
+   
+  }
+     if (pitch == 82){
+    nr = 7;
+    readToSDCard();
+   
+  }
+     if (pitch == 83){
+    nr = 8;
+    readToSDCard();
+   
+  }
+  // ksownik
+     if (pitch == 84){
+    //nr = 0;
+    //readToSDCard();
+    BAS_channel_1=0;
+    TREBL_channel_1=0;
+    lcd.setCursor(0, 0);
+    lcd.print("Kasownik  0     ");
+   
+ 
+  }
+if (digitalRead(SetPin) == HIGH){
+  // przycisk > (next)
+       if (pitch == 85){
+    nr++;
+    if (nr > 8 ){
+      nr = 1;
+      realNrBank++;
+      if (realNrBank > 256){
+        realNrBank = 1;
+        displayNrBank = realNrBank;
+      }
+    }
+    readToSDCard();
+   
+  }
+//prycisk < (previous)
+    if (pitch == 86){
+    nr--;
+    if (nr < 1 ){
+      nr = 8;
+      realNrBank--;
+      if (realNrBank < 1){
+        realNrBank = 256;
+        displayNrBank = realNrBank;
+      }
+    }
+    readToSDCard();
+   
+  }
+}  
+   
+  if (channel == 1){ //ustawianie flag dla kanału 1
+     
+          if (pitch >= 36 && pitch <= 68){
+             if ((bitRead(BAS_channel_1, pitch - 36)) == LOW){  
+             bitSet(BAS_channel_1, pitch - 36);
+             } else {
+               bitClear(BAS_channel_1, pitch - 36);
+               }
+          }
+   
+          if (pitch >= 69 && pitch <= 101){
+            if ((bitRead(TREBL_channel_1, pitch - 69)) == LOW){
+            bitSet(TREBL_channel_1, pitch - 69);
+            } else {
+              bitClear(TREBL_channel_1, pitch - 69);
+            }
+          }
+      }
+           
+}
+
+// MyHandleNoteOFF is the function that will be called by the Midi Library
+// when a MIDI NOTE OFF message is received.
+// * A NOTE ON message with Velocity = 0 will be treated as a NOTE OFF message *
+// It will be passed bytes for Channel, Pitch, and Velocity
+
+void MyHandleNoteOff(byte channel, byte pitch, byte velocity) {
+  if (pitch == 87){
+    digitalWrite(SetPin, HIGH);
+    
+  }
+/*
+  // Obsługa noteOFF
+  if (channel == 1) {
+     
+   if (pitch >= 36 && pitch <= 68){ // gaszenie flag Bas
+      bitClear(BAS_channel_1, pitch - 36);
+    }
+   
+    if (pitch >= 69 && pitch <= 101){ // gaszenie flag Trebll
+      bitClear(TREBL_channel_1, pitch - 69);
+    }        
+  }
+  */    
+}
+
+void senderMidi(){
+  int pitch = 0;
+  int channel = 1;
+  int velocity = 127;
+  if (prev_BAS_channel_1 != BAS_channel_1) {
+   
+     for (int i = 36; i <= 68; i++){
+          if ((bitRead(BAS_channel_1, i - 36) == HIGH) && (bitRead(prev_BAS_channel_1, i - 36) == LOW)) {
+          pitch =  i;
+          channel = 1;
+          MIDI.sendNoteOn (pitch, velocity, channel);
+          }
+          if ((bitRead(BAS_channel_1, i - 36) == LOW) && (bitRead(prev_BAS_channel_1, i - 36) == HIGH)) {
+          pitch =  i;
+          channel = 1;
+          MIDI.sendNoteOff (pitch, velocity, channel);
+          }
+      }
+    prev_BAS_channel_1 = BAS_channel_1;
+    }
+ 
+ 
+   if (prev_TREBL_channel_1 != TREBL_channel_1) {
+   
+       for (int i = 69; i <= 101; i++){
+          if ((bitRead(TREBL_channel_1, i - 69) == HIGH) & (bitRead(prev_TREBL_channel_1, i - 69) == LOW)) {
+          pitch =  i;
+          channel = 1;
+          MIDI.sendNoteOn (pitch, velocity, channel);
+          }
+          if ((bitRead(TREBL_channel_1, i - 69) == LOW) & (bitRead(prev_TREBL_channel_1, i - 69) == HIGH)) {
+          pitch =  i;
+          channel = 1;
+          MIDI.sendNoteOff (pitch, velocity, channel);
+          }
+      }
+   prev_TREBL_channel_1 = TREBL_channel_1;  
+   }
+ 
+}
+
+
+
+void writeToSDCard(){
+   char fileName[13]; // Długość nazwy pliku nie przekracza 8 znaków + 1 znak rozszerzenia + 4 znaki numeru pliku (1, 2, 3...)
+   sprintf(fileName, "C%dB%d.txt", nr, realNrBank);
+   if (SD.exists(fileName)){
+     SD.remove(fileName);
+   }
+   dataFile = SD.open(fileName, FILE_WRITE);
+
+     if (dataFile) {
+      dataFile.print(BAS_channel_1);
+      dataFile.print(",");
+      dataFile.println(TREBL_channel_1);
+      dataFile.close();
+      lcd.home();
+      lcd.print("Zapisano OK.");
+  } else {
+    lcd.home();
+    lcd.print("Error open file!");
+   
+  }
+lcd.setCursor(0, 0);
+lcd.print("Comb nr         "); // Czyszczenie starej wartości
+lcd.setCursor(8, 0);
+lcd.print(nr);  
+}
+
+void readToSDCard(){
+  char fileName[13]; // Długość nazwy pliku nie przekracza 8 znaków + 1 znak rozszerzenia + 4 znaki numeru pliku (1, 2, 3...)
+  sprintf(fileName, "C%dB%d.txt", nr, realNrBank);
+  dataFile = SD.open(fileName);
+
+  if (dataFile) {
+    // Odczytaj dane z pliku i przypisz je do zmiennych BAS_channel_1 iTREBL_channel_1
+    char buffer[30]; // Bufor na odczytane dane
+    dataFile.readBytesUntil('\n', buffer, sizeof(buffer));
+
+    // Użyj funkcji sscanf do analizy danych w buforze
+    sscanf(buffer, "%lu,%lu", &BAS_channel_1, &TREBL_channel_1);
+
+    dataFile.close();
+  } else {
+    lcd.home();
+    lcd.print("File no exist. Tworzę nowy plik.");
+
+    // Jeśli plik nie istnieje, utwórz go i wypełnij zerami
+    dataFile = SD.open(fileName, FILE_WRITE);
+    if (dataFile) {
+      dataFile.print(0);
+      dataFile.print(",");
+      dataFile.println(0);
+      dataFile.close();
+      // a nastepnie odczytaj
+       if (dataFile) {
+       // Odczytaj dane z pliku i przypisz je do zmiennych BAS_channel_1 iTREBL_channel_1
+       char buffer[30]; // Bufor na odczytane dane
+       dataFile.readBytesUntil('\n', buffer, sizeof(buffer));
+
+       // Użyj funkcji sscanf do analizy danych w buforze
+       sscanf(buffer, "%lu,%lu", &BAS_channel_1, &TREBL_channel_1);
+
+       dataFile.close();
+    }
+    lcd.home();
+      lcd.print("Zapisano OK.");
+  } else {
+    lcd.home();
+    lcd.print("Error open file!");
+    }
+  }
+
+lcd.setCursor(0, 0);
+lcd.print("Comb nr         "); // Czyszczenie starej wartości
+lcd.setCursor(8, 0);
+lcd.print(nr);
+
+ 
+}
